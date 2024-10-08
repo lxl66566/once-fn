@@ -1,6 +1,6 @@
 //! test the most complex fn case
 
-use fn_once::once;
+use once_fn::once;
 
 #[derive(Clone, Debug)]
 pub struct Foo(i32);

@@ -1,6 +1,6 @@
 //! test if the output is correct
 
-use fn_once::once;
+use once_fn::once;
 
 struct Foo(bool);
 
@@ -14,7 +14,6 @@ impl Foo {
     }
 }
 
-/// Test macro
 #[once]
 async fn foo(f: &mut Foo) -> bool {
     return f.next();
