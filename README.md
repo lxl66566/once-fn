@@ -16,6 +16,10 @@ This crate:
 - support async
 - support generics (in input)
 
+## MSRV
+
+1.61.0 (nightly), 1.70.0 (stable)
+
 ## todo
 
 - [ ] support impl block

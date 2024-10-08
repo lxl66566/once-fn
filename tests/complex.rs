@@ -23,7 +23,7 @@ impl BarTrait for Bar {
 }
 
 #[once]
-pub async unsafe fn foo<T>(f: Foo, b: T) -> Foo
+pub async unsafe fn foo<'a, T>(f: Foo, b: &'a T) -> Foo
 where
     T: BarTrait,
 {
@@ -35,7 +35,7 @@ async fn complex() {
     unsafe {
         let x: Foo = foo(
             Foo(1),
-            Bar {
+            &Bar {
                 x: Foo(2),
                 y: Foo(3),
             },
