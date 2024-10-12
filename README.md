@@ -7,7 +7,42 @@ This crate focuses on one simple thing: **make a function runs only once**. All 
 - Return type must satisfy:
   - Implements `Clone`, or a reference points to a type that implements `Clone`.
   - could not be generics type or `impl` clause.
-- Could not use in impl block.
+
+## Example
+
+```rust
+use once_fn::once;
+
+#[once]
+pub fn foo(b: bool) -> bool {
+    b
+}
+assert!(foo(true));  // set the return value to `true`
+assert!(foo(false)); // will not run this function twice; directly return `true`.
+
+// allows ref:
+#[once]
+pub fn foo2(b: &bool) -> &bool {
+    b
+}
+```
+
+for impl block:
+
+```rust
+use once_fn::once_impl;
+struct Foo;
+
+#[once_impl]
+impl Foo {
+    #[once]
+    pub fn foo(b: bool) -> bool {
+        b
+    }
+}
+```
+
+see [tests](./tests/) for more examples.
 
 ## Why not
 
@@ -15,8 +50,9 @@ This crate focuses on one simple thing: **make a function runs only once**. All 
   - does not support async fn
   - does not support generics (in input)
   - does not support reference (in return type)
+  - does not support use in impl block
 - `fn-once`
-  - almost no docs
+  - Almost no docs; I don't know what it actually do.
   - It can't even compile its example
 
 ## MSRV
@@ -25,4 +61,4 @@ This crate focuses on one simple thing: **make a function runs only once**. All 
 
 ## todo
 
-- [ ] support impl block
+- [x] support impl block
