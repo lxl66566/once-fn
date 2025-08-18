@@ -2,14 +2,14 @@
 authors     = ["Absolutex <lxl66566@gmail.com>"]
 categories  = ["rust-patterns"]
 description = "cache the result of a function, make it runs only once"
-edition     = "2021"
+edition     = "2024"
 homepage    = "https://github.com/lxl66566/once-fn"
 keywords    = ["once", "proc-macro", "cache"]
 license     = "MIT"
 name        = "once-fn"
 readme      = "README.md"
 repository  = "https://github.com/lxl66566/once-fn"
-version     = "0.2.0"
+version     = "0.2.1"
 
 [lib]
 proc-macro = true

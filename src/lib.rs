@@ -117,7 +117,7 @@ pub fn once_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
             generated_fns.push(quote! {item});
         }
     }
-    let gen = quote! {
+    let r#gen = quote! {
         #(#generated_statics)*
 
         #(#impl_attrs)*
@@ -126,5 +126,5 @@ pub fn once_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    gen.into()
+    r#gen.into()
 }
