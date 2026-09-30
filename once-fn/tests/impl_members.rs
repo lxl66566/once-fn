@@ -2,6 +2,7 @@
 
 use once_fn::once_impl;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Foo {
     base: u32,
 }
@@ -23,6 +24,16 @@ impl Foo {
     #[once]
     fn cached(x: u32) -> u32 {
         x * 2
+    }
+
+    #[once]
+    fn singleton() -> Self {
+        Foo { base: 99 }
+    }
+
+    #[once]
+    fn pair(x: u32) -> Vec<Self> {
+        vec![Foo { base: x }, Foo { base: x + 1 }]
     }
 }
 
@@ -56,6 +67,11 @@ fn members_preserved() {
     assert_eq!(foo.plain(5), 15);
     assert_eq!(Foo::cached(21), 42);
     assert_eq!(Foo::cached(1), 42); // returns the cached value
+
+    // `Self` in the return type resolves to the impl's self type
+    assert_eq!(Foo::singleton(), Foo { base: 99 });
+    assert_eq!(Foo::pair(7), vec![Foo { base: 7 }, Foo { base: 8 }]);
+    assert_eq!(Foo::pair(1), vec![Foo { base: 7 }, Foo { base: 8 }]); // cached
 
     let pair: <Foo as HasPair>::Pair = foo.pair();
     assert_eq!(pair, (10, 7));

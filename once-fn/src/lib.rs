@@ -53,6 +53,28 @@
 //! assert!(Foo::foo(false)); // cached
 //! ```
 //!
+//! Methods inside `#[once_impl]` may return `Self`.
+//!
+//! ```
+//! use once_fn::{once, once_impl};
+//!
+//! #[derive(Clone, Debug, PartialEq, Eq)]
+//! struct Config {
+//!     value: u32,
+//! }
+//!
+//! #[once_impl]
+//! impl Config {
+//!     #[once]
+//!     fn first(x: u32) -> Self {
+//!         Config { value: x }
+//!     }
+//! }
+//!
+//! assert_eq!(Config::first(1), Config { value: 1 });
+//! assert_eq!(Config::first(2), Config { value: 1 }); // cached from the first call
+//! ```
+//!
 //! Returning [`std::sync::Arc`] is the pattern for large or non-[`Clone`]
 //! values: the cache stores the `Arc`, so every call only bumps the reference
 //! counter and the pointee type needs no `Clone`.
