@@ -84,6 +84,24 @@ use syn::{ItemFn, ItemImpl};
 /// stamped_reset();
 /// assert_eq!(stamped(), 7); // runs the body again
 /// ```
+///
+/// `#[once(by_ref)]` caches the owned return value and hands out `&'static`
+/// references to it, so the return type needs no `Clone`: the attribute
+/// rewrites the declared return `T` into `-> &'static T`.
+///
+/// ```
+/// use once_fn::once;
+///
+/// struct Big([u8; 4096]); // does not implement Clone
+///
+/// #[once(by_ref)]
+/// fn big() -> Big {
+///     Big([0; 4096])
+/// }
+///
+/// assert!(std::ptr::eq(big(), big())); // both calls borrow the same cached value
+/// assert_eq!(big().0.len(), 4096);
+/// ```
 #[proc_macro_attribute]
 pub fn once(attr: TokenStream, item: TokenStream) -> TokenStream {
     expand_once(attr, item)

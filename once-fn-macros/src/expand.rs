@@ -16,12 +16,15 @@ enum Storage {
     /// Cache the pointee of a reference return; every call gets a reference to
     /// the cached value.
     Pointee(TokenStream),
+    /// `#[once(by_ref)]`: cache the returned value; every call gets a
+    /// reference to the cached value.
+    Lent(TokenStream),
 }
 
 impl Storage {
     /// `self_ty` substitutes `Self` in the stored type; it is `None` for free
     /// functions.
-    fn of(sig: &Signature, self_ty: Option<&Type>) -> Storage {
+    fn of(sig: &Signature, self_ty: Option<&Type>, cfg: &OnceAttr) -> Storage {
         let subst = |ty: &Type| {
             if let Some(self_ty) = self_ty {
                 subst_self(ty, self_ty)
@@ -29,6 +32,13 @@ impl Storage {
                 quote! { #ty }
             }
         };
+        if cfg.by_ref {
+            // by_ref is owned-return-only, enforced by diagnostics
+            return match &sig.output {
+                ReturnType::Default => Storage::Lent(quote! { () }),
+                ReturnType::Type(_, ty) => Storage::Lent(subst(ty)),
+            };
+        }
         match &sig.output {
             ReturnType::Default => Storage::Owned(quote! { () }),
             ReturnType::Type(_, ty) => match &**ty {
@@ -43,7 +53,7 @@ impl Storage {
 
     fn ty(&self) -> &TokenStream {
         match self {
-            Storage::Owned(ty) | Storage::Pointee(ty) => ty,
+            Storage::Owned(ty) | Storage::Pointee(ty) | Storage::Lent(ty) => ty,
         }
     }
 }
@@ -53,11 +63,28 @@ pub(crate) fn expand_free_fn(input: &ItemFn, cfg: &OnceAttr) -> TokenStream {
     if cfg.resettable {
         return expand_resettable_fn(input);
     }
-    let body = cached_body(&input.sig, &input.block, None);
+    let body = cached_body(&input.sig, &input.block, None, cfg);
     let attrs = without_once(&input.attrs);
     let vis = &input.vis;
-    let sig = &input.sig;
+    let sig = emitted_sig(&input.sig, cfg);
     quote! { #(#attrs)* #vis #sig #body }
+}
+
+/// The signature as emitted into the expansion. `by_ref` rewrites the owned
+/// return `T` into `-> &'static T`; every other signature passes through
+/// unchanged. `Self` in the return type stays: the signature remains in the
+/// impl context where it resolves.
+fn emitted_sig(sig: &Signature, cfg: &OnceAttr) -> TokenStream {
+    if !cfg.by_ref {
+        return quote! { #sig };
+    }
+    let mut sig = sig.clone();
+    let ret = match &sig.output {
+        ReturnType::Default => quote! { () },
+        ReturnType::Type(_, ty) => quote! { #ty },
+    };
+    sig.output = syn::parse_quote! { -> &'static #ret };
+    quote! { #sig }
 }
 
 /// Expand `#[once(resettable)]`: the cache is a module-level
@@ -69,7 +96,7 @@ fn expand_resettable_fn(input: &ItemFn) -> TokenStream {
     let vis = &input.vis;
     let block = &input.block;
     // `resettable` is owned-only and Self-free, both enforced by diagnostics
-    let Storage::Owned(ty) = Storage::of(sig, None) else {
+    let Storage::Owned(ty) = Storage::of(sig, None, &OnceAttr::default()) else {
         unreachable!("checked by diagnostics")
     };
     let static_name = format_ident!("__ONCE_{}", unraw(fn_name));
@@ -139,28 +166,45 @@ pub(crate) fn expand_impl(input: &ItemImpl) -> TokenStream {
 
 /// Expand an `#[once]` method inside an `#[once_impl]` block.
 fn expand_method(input: &ImplItemFn, self_ty: &Type) -> TokenStream {
-    let body = cached_body(&input.sig, &input.block, Some(self_ty));
+    // argument parsing was already validated by the driver before expansion
+    let cfg = input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("once"))
+        .and_then(|attr| crate::attr::parse_once_attr(attr).ok())
+        .unwrap_or_default();
+    let body = cached_body(&input.sig, &input.block, Some(self_ty), &cfg);
     let attrs = without_once(&input.attrs);
     let vis = &input.vis;
     let defaultness = &input.defaultness;
-    let sig = &input.sig;
+    let sig = emitted_sig(&input.sig, &cfg);
     quote! { #(#attrs)* #vis #defaultness #sig #body }
 }
 
 /// Build the rewritten function body: a body-local cache static plus the
 /// `get_or_init` call. Async and sync functions use different cells.
-fn cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
+fn cached_body(
+    sig: &Signature,
+    block: &Block,
+    self_ty: Option<&Type>,
+    cfg: &OnceAttr,
+) -> TokenStream {
     if sig.asyncness.is_some() {
-        async_cached_body(sig, block, self_ty)
+        async_cached_body(sig, block, self_ty, cfg)
     } else {
-        sync_cached_body(sig, block, self_ty)
+        sync_cached_body(sig, block, self_ty, cfg)
     }
 }
 
 /// Build the body for sync functions: a `OnceLock` plus the same-thread
 /// reentrancy guard.
-fn sync_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
-    let storage = Storage::of(sig, self_ty);
+fn sync_cached_body(
+    sig: &Signature,
+    block: &Block,
+    self_ty: Option<&Type>,
+    cfg: &OnceAttr,
+) -> TokenStream {
+    let storage = Storage::of(sig, self_ty, cfg);
     let ty = storage.ty();
     let cache_call = match &storage {
         // explicit dereference-and-clone via UFCS, so the clone target cannot
@@ -169,6 +213,8 @@ fn sync_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> T
             quote! { __ONCE.get_or_init(move || ::core::clone::Clone::clone(#block)) }
         },
         Storage::Owned(_) => quote! { __ONCE.get_or_init(move || #block).clone() },
+        // the reference handed out by `get_or_init` is the return value
+        Storage::Lent(_) => quote! { __ONCE.get_or_init(move || #block) },
     };
     let guarded = reentrancy_guard(&sig.ident, &cache_call);
     quote! {
@@ -185,8 +231,13 @@ fn sync_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> T
 /// call clones the value (or reborrows the cached pointee). The cell itself
 /// provides cancellation, panic-retry and reentrancy handling, so no extra
 /// guard is generated here.
-fn async_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
-    let storage = Storage::of(sig, self_ty);
+fn async_cached_body(
+    sig: &Signature,
+    block: &Block,
+    self_ty: Option<&Type>,
+    cfg: &OnceAttr,
+) -> TokenStream {
+    let storage = Storage::of(sig, self_ty, cfg);
     let ty = storage.ty();
     let cache_call = match &storage {
         // the awaited reference to the stored pointee is the return value; the
@@ -196,6 +247,10 @@ fn async_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> 
         },
         Storage::Owned(_) => {
             quote! { __ONCE.get_or_init(move || async move { #block }).await.clone() }
+        },
+        // the awaited reference to the stored value is the return value
+        Storage::Lent(_) => {
+            quote! { __ONCE.get_or_init(move || async move { #block }).await }
         },
     };
     quote! {

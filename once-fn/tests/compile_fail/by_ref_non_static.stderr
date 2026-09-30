@@ -1,0 +1,5 @@
+error: by_ref requires a `'static` return type: the cached value outlives every caller
+ --> tests/compile_fail/by_ref_non_static.rs:4:20
+  |
+4 | fn foo(s: &str) -> std::borrow::Cow<'_, str> {
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^

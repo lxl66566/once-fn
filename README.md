@@ -4,8 +4,6 @@ Make a function run only once: every later call returns the cached result of the
 
 ## Example
 
-Sync function:
-
 ```rust
 use once_fn::once;
 
@@ -18,142 +16,55 @@ assert!(foo(true));  // runs the body and caches `true`
 assert!(foo(false)); // returns the cached `true`, the body is not run again
 ```
 
-`async fn`, runtime-agnostic:
+`async fn` works the same way, runtime-agnostic — the cache is [`AsyncOnceCell`](https://docs.rs/once-fn/latest/once_fn/struct.AsyncOnceCell.html), also exported for direct use. For impl blocks, apply `#[once_impl]` to the block and `#[once]` to the methods; `-> Self` and reference returns work.
+
+## Storage
+
+The declared return type decides what the cache stores and what callers get:
+
+| Form | Callers get | Requires |
+| --- | --- | --- |
+| `-> T` (default) | a fresh clone of the cached value, every call | `T: Clone` |
+| `-> &T` | a reference into the cache, every call the same slot | `T: Sized + Clone` |
+| `-> Arc<T>` | a cheap clone (refcount bump); shares one allocation | nothing on `T` |
+| `#[once(by_ref)]` | `&'static T` into the cache, no clone at all | `T: 'static` |
+| `#[once(resettable)]` | like the default, plus a `<name>_reset()` that drops the cache so the next call reruns | sync free fn, owned return |
 
 ```rust
 use once_fn::once;
 
-#[once]
-async fn answer() -> u32 {
-    std::future::ready(()).await; // any async work
-    42
+struct Big([u8; 4096]); // does not implement Clone
+
+#[once(by_ref)]
+fn big() -> Big {
+    Big([0; 4096])
 }
 
-// call it like any async fn: `answer().await`
+let a: &'static Big = big();
+assert!(std::ptr::eq(a, big())); // every call borrows the same cached slot
 ```
 
-The async cache is [`AsyncOnceCell`](https://docs.rs/once-fn/latest/once_fn/struct.AsyncOnceCell.html), a runtime-agnostic asynchronous once cell that is also exported for direct use.
-
-Methods in impl blocks, including trait impls; `-> Self` and reference returns work:
-
-```rust
-use once_fn::{once, once_impl};
-
-struct Foo;
-
-#[once_impl]
-impl Foo {
-    #[once]
-    pub fn foo(b: bool) -> bool {
-        b
-    }
-}
-
-assert!(Foo::foo(true));
-assert!(Foo::foo(false)); // cached
-```
-
-## Storage
-
-The declared return type decides what the cache stores:
-
-- Owned return (default): the return type must implement `Clone`; every call returns a fresh clone of the cached value.
-- `-> &T`: the cache stores the pointee, which must be `Sized + Clone`, and every call returns a reference into the cache. The returned reference does not point at the value the first caller passed in (the pointee is cloned into the cache); all calls return references to the same cached slot.
-
-  ```rust
-  use once_fn::once;
-
-  #[once]
-  fn first(input: &u32) -> &u32 {
-      input
-  }
-
-  let one = 1;
-  let a = first(&one);
-  let two = 2;
-  assert_eq!(first(&two), a);
-  ```
-
-- `-> Arc<T>`: the cache stores the `Arc` and each call bumps the reference counter, so `T` does not need `Clone` and callers share one allocation. This is the recommended pattern for large values.
-
-  ```rust
-  use std::sync::Arc;
-
-  use once_fn::once;
-
-  struct Big([u8; 4096]); // does not implement Clone
-
-  #[once]
-  fn big() -> Arc<Big> {
-      Arc::new(Big([0; 4096]))
-  }
-
-  let a = big();
-  let b = big();
-  assert!(Arc::ptr_eq(&a, &b));
-  ```
-
-- `#[once(resettable)]` (sync free functions with owned returns only) switches to a resettable cache and generates a `<name>_reset` function with the same visibility. Resetting drops the old value, so the next call runs the body again.
-
-  ```rust
-  use once_fn::once;
-
-  #[once(resettable)]
-  fn stamp() -> u32 {
-      // expensive computation
-      7
-  }
-
-  assert_eq!(stamp(), 7);
-  assert_eq!(stamp(), 7); // cached
-  stamp_reset();
-  assert_eq!(stamp(), 7); // runs the body again
-  ```
+`#[once(by_ref)]` is the `LazyLock` pattern without the static boilerplate: the attribute rewrites the declared `-> T` into `-> &'static T`, while the body still returns an owned `T` exactly as written. Prefer `-> Arc<T>` when callers must own the value.
 
 ## Semantics
 
-- Only the first call runs the body. Later calls still evaluate their arguments at the call site, but the body does not run.
-- If the first call panics, nothing is cached and the next call runs the body again; the body of a once fn may therefore run more than once in the presence of panics or cancellations. For `async fn`, dropping the initializing future before it finishes (task abort, timeout) or a panic in the body rolls the cache back the same way.
-- Concurrent first calls run the body exactly once.
-- The cached value lives until process exit and is never dropped; `reset` is the only way to drop it.
-- A once method's cache is one static per function, shared across all instances of the type: `a.load()` and `b.load()` return the same cached value.
-- Reentrancy: calling a once fn again while its body is running on the same thread (or awaiting an async once fn from inside its own initializing body) panics with a clear message instead of deadlocking. Cross-thread reentrancy, where thread A is initializing and thread B re-enters and the two end up waiting on each other, is not detected and still deadlocks.
-- The async initializer runs inside the first caller's task context: nothing is spawned and no thread blocks, but synchronous stretches of the body run on that task. Awaiting other once fns inside the body is supported (each function has its own cell).
+- Only the first call runs the body; arguments of later calls have no effect on the result.
+- A failed first attempt caches nothing — a panic, or an async initializer cancelled before it finishes — so the next call runs the body again.
+- Concurrent first calls run the body exactly once: sync callers block inside `get_or_init`, async callers park as futures and are woken. The async initializer runs inside the first caller's task; nothing is spawned.
+- The cached value lives until process exit; `<name>_reset` is the only way to drop it.
+- Reentering a once fn while its body is initializing panics with a clear message instead of deadlocking. Cross-thread reentrancy is not detected and still deadlocks.
 
 ## Limitations
 
-The following forms are rejected at compile time:
-
-- Type or const generic functions, and generic impls containing `#[once]` methods (lifetime-only generics are fine): one cache would be shared by all monomorphizations. `impl Trait` in argument or return position is rejected for the same reason.
-- `const fn`: the cache requires runtime initialization.
-- `-> &mut T` returns: they would allow mutation of the cached value.
-- DST pointees such as `-> &str`, `-> &[T]` or `-> &dyn Trait`: the pointee must be `Sized`.
-- `#[once(resettable)]` on `async fn`, on reference returns, or inside `#[once_impl]`.
+Rejected at compile time, with precise diagnostics: generic functions and generic impls (lifetime-only generics are fine), `impl Trait` in argument or return position, `const fn`, `-> &mut T`, DST pointees (`-> &str`, `-> &[T]`), `resettable` on `async fn`/reference returns/inside `#[once_impl]`, and `by_ref` on reference or non-`'static` returns or combined with `resettable`.
 
 See [tests](./once-fn/tests/) for more examples.
 
 ## Why not
 
-- `cached::proc_macro::once`
-  - does not support async fn
-  - does not support generics (in input)
-  - does not support reference (in return type)
-  - does not support use in impl block
-- `fn-once`
-  - Almost no docs; I don't know what it actually do.
-  - It can't even compile its example
+- `cached::proc_macro::once`: no async fn, no reference returns, no impl blocks. (It does offer TTL expiry and skipping `None`/`Err` results, which this crate does not.)
+- `fn-once`: barely documented; its own example does not compile.
 
 ## MSRV
 
 1.85
-
-## Why not
-
-- `cached::proc_macro::once`
-  - does not support async fn
-  - does not support generics (in input)
-  - does not support reference (in return type)
-  - does not support use in impl block
-- `fn-once`
-  - Almost no docs; I don't know what it actually do.
-  - It can't even compile its example

@@ -98,6 +98,26 @@
 //! assert_eq!(a.0.len(), 4096);
 //! ```
 //!
+//! `#[once(by_ref)]` is the alternative for non-[`Clone`] values: the body
+//! returns an owned value (as written), the cache stores it directly, and the
+//! generated function returns `&'static` references to it. This is the
+//! [`std::sync::LazyLock`] pattern without the static boilerplate; the
+//! trade-off is that callers cannot own the value.
+//!
+//! ```
+//! use once_fn::once;
+//!
+//! struct Huge([u8; 4096]); // does not implement Clone
+//!
+//! #[once(by_ref)]
+//! fn huge() -> Huge {
+//!     Huge([0; 4096])
+//! }
+//!
+//! let a: &'static Huge = huge();
+//! assert!(std::ptr::eq(a, huge())); // both calls borrow the same cached slot
+//! ```
+//!
 //! `#[once(resettable)]` switches to a resettable cache and generates a
 //! companion `<function>_reset` function with the same visibility: calling it
 //! drops the cached value, so the next call runs the body again.
@@ -177,7 +197,8 @@
 //!
 //! The cached value is returned by cloning, so the declared return type must
 //! implement [`Clone`]; for a reference return, the pointee must implement
-//! `Clone`.
+//! `Clone`. The exceptions are `#[once(by_ref)]` (no `Clone`, but the return
+//! type must be `'static`) and an [`std::sync::Arc`] return (cheap clones).
 //!
 //! The following forms are rejected at compile time:
 //!
@@ -187,6 +208,8 @@
 //! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `-> &dyn Trait`).
 //! - `#[once(resettable)]` on an `async fn`, on a reference return type, or inside an
 //!   `#[once_impl]` block.
+//! - `#[once(by_ref)]` on a reference return type, on a non-`'static` return type, or together with
+//!   `resettable`.
 
 mod async_once_cell;
 

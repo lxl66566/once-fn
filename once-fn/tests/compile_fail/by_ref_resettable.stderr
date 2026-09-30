@@ -1,0 +1,5 @@
+error: by_ref is not supported with `resettable`: resetting would dangle the handed-out references
+ --> tests/compile_fail/by_ref_resettable.rs:4:4
+  |
+4 | fn foo() -> u32 {
+  |    ^^^

@@ -74,6 +74,30 @@ pub(crate) fn check_fn(sig: &Signature, cfg: &OnceAttr, in_impl: bool) -> Vec<Er
         ));
     }
 
+    if cfg.by_ref {
+        if let Some(ty) = return_ty(sig) {
+            if matches!(ty, Type::Reference(_)) {
+                errors.push(Error::new_spanned(
+                    ty,
+                    "by_ref requires an owned return type: the reference is added by the attribute",
+                ));
+            } else if contains_non_static_lifetime(ty) {
+                errors.push(Error::new_spanned(
+                    ty,
+                    "by_ref requires a `\'static` return type: the cached value outlives every \
+                     caller",
+                ));
+            }
+        }
+        if cfg.resettable {
+            errors.push(Error::new_spanned(
+                &sig.ident,
+                "by_ref is not supported with `resettable`: resetting would dangle the handed-out \
+                 references",
+            ));
+        }
+    }
+
     if cfg.resettable {
         if in_impl {
             errors.push(Error::new_spanned(
@@ -152,6 +176,47 @@ fn is_dst(ty: &Type) -> bool {
             tp.qself.is_none() && tp.path.get_ident().is_some_and(|ident| ident == "str")
         },
         Type::Tuple(t) => t.elems.last().is_some_and(is_dst),
+        _ => false,
+    }
+}
+
+/// Whether a type mentions a lifetime other than `'static`. Elided and
+/// anonymous lifetimes (`'_`) count as borrowed: they cannot name the cache.
+fn contains_non_static_lifetime(ty: &Type) -> bool {
+    fn is_static(lt: &syn::Lifetime) -> bool {
+        lt.ident == "static"
+    }
+    match ty {
+        Type::Reference(r) => {
+            r.lifetime.as_ref().is_some_and(|lt| !is_static(lt))
+                || contains_non_static_lifetime(&r.elem)
+        },
+        Type::Ptr(p) => contains_non_static_lifetime(&p.elem),
+        Type::Slice(s) => contains_non_static_lifetime(&s.elem),
+        Type::Array(a) => contains_non_static_lifetime(&a.elem),
+        Type::Paren(p) => contains_non_static_lifetime(&p.elem),
+        Type::Tuple(t) => t.elems.iter().any(contains_non_static_lifetime),
+        // `dyn Trait` without a lifetime bound defaults to `'static`
+        Type::TraitObject(t) => t
+            .bounds
+            .iter()
+            .any(|b| matches!(b, syn::TypeParamBound::Lifetime(lt) if !is_static(lt))),
+        Type::BareFn(f) => {
+            f.inputs.iter().any(|arg| contains_non_static_lifetime(&arg.ty))
+                || matches!(&f.output, syn::ReturnType::Type(_, t) if contains_non_static_lifetime(t))
+        },
+        Type::Path(tp) => tp.path.segments.iter().any(|seg| match &seg.arguments {
+            syn::PathArguments::AngleBracketed(a) => a.args.iter().any(|arg| match arg {
+                syn::GenericArgument::Lifetime(lt) => !is_static(lt),
+                syn::GenericArgument::Type(t) => contains_non_static_lifetime(t),
+                _ => false,
+            }),
+            syn::PathArguments::Parenthesized(p) => {
+                p.inputs.iter().any(contains_non_static_lifetime)
+                    || matches!(&p.output, syn::ReturnType::Type(_, t) if contains_non_static_lifetime(t))
+            },
+            syn::PathArguments::None => false,
+        }),
         _ => false,
     }
 }

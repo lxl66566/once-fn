@@ -1,4 +1,4 @@
-error: unexpected attribute argument, expected `resettable`
+error: unexpected attribute argument, expected `resettable` or `by_ref`
  --> tests/compile_fail/attr_arg.rs:3:8
   |
 3 | #[once(something)]

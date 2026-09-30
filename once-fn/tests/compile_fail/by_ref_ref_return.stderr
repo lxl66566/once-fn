@@ -1,0 +1,5 @@
+error: by_ref requires an owned return type: the reference is added by the attribute
+ --> tests/compile_fail/by_ref_ref_return.rs:4:21
+  |
+4 | fn foo(b: &bool) -> &bool {
+  |                     ^^^^^
