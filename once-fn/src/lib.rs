@@ -97,6 +97,12 @@
 //! assert_eq!(a.0.len(), 4096);
 //! ```
 //!
+//! # Panics
+//!
+//! If a once function is called again while its body is running (directly or
+//! indirectly, on the same thread), the reentrant call panics with a clear
+//! message instead of deadlocking on the cache.
+//!
 //! # Limitations
 //!
 //! The cached value is returned by cloning, so the declared return type must

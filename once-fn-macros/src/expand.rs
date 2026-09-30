@@ -101,11 +101,11 @@ fn expand_method(input: &ImplItemFn, self_ty: &Type) -> TokenStream {
 }
 
 /// Build the rewritten function body: a body-local cache static plus the
-/// `get_or_init` call.
+/// `get_or_init` call, wrapped in the reentrancy guard.
 fn cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
     let storage = Storage::of(sig, self_ty);
     let ty = storage.ty();
-    let init = match &storage {
+    let cache_call = match &storage {
         // explicit dereference-and-clone via UFCS, so the clone target cannot
         // be confused by method resolution
         Storage::Pointee(_) => {
@@ -113,12 +113,43 @@ fn cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenS
         }
         Storage::Owned(_) => quote! { __ONCE.get_or_init(move || #block).clone() },
     };
+    let guarded = reentrancy_guard(&sig.ident, cache_call);
     quote! {
         {
             // `OnceLock` lives in `std`, not `core` (probed on nightly 1.101)
             static __ONCE: ::std::sync::OnceLock<#ty> = ::std::sync::OnceLock::new();
-            #init
+            #guarded
         }
+    }
+}
+
+/// Wrap the cache access in a same-thread reentrancy check. A recursive call
+/// while the initializer runs would deadlock inside `get_or_init`, so it
+/// panics with a clear message instead. The guard resets the flag on unwind:
+/// `OnceLock` retries the initializer after a panic, so the flag must not stay
+/// stuck.
+fn reentrancy_guard(fn_name: &syn::Ident, inner: TokenStream) -> TokenStream {
+    let msg = format!(
+        "`{fn_name}` re-entered while it is initializing; a once fn cannot call itself recursively"
+    );
+    quote! {
+        ::std::thread_local! {
+            static __ONCE_INIT: ::core::cell::Cell<bool> = const { ::core::cell::Cell::new(false) };
+        }
+        __ONCE_INIT.with(|__flag| {
+            if __flag.get() {
+                ::core::panic!(#msg);
+            }
+            struct __ResetInitFlag<'a>(&'a ::core::cell::Cell<bool>);
+            impl ::core::ops::Drop for __ResetInitFlag<'_> {
+                fn drop(&mut self) {
+                    self.0.set(false);
+                }
+            }
+            let __guard = __ResetInitFlag(__flag);
+            __flag.set(true);
+            #inner
+        })
     }
 }
 
