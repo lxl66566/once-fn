@@ -1,7 +1,7 @@
 [package]
 authors                = ["Absolutex <lxl66566@gmail.com>"]
 categories             = ["rust-patterns"]
-description            = "cache the result of a function, make it runs only once"
+description            = "cache the result of a function so its body runs only once"
 edition.workspace      = true
 keywords               = ["once", "proc-macro", "cache"]
 license.workspace      = true

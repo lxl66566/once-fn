@@ -65,6 +65,23 @@ use syn::{ItemFn, ItemImpl};
 /// assert!(block_on(bar(true)));
 /// assert!(block_on(bar(false))); // body is not run again
 /// ```
+///
+/// `#[once(resettable)]` switches to a resettable cache and generates a
+/// `<function>_reset` companion function with the same visibility: calling it
+/// drops the cached value, so the next call runs the body again.
+///
+/// ```
+/// use once_fn::once;
+///
+/// #[once(resettable)]
+/// fn stamped() -> usize {
+///     7
+/// }
+///
+/// assert_eq!(stamped(), 7);
+/// stamped_reset();
+/// assert_eq!(stamped(), 7); // runs the body again
+/// ```
 #[proc_macro_attribute]
 pub fn once(attr: TokenStream, item: TokenStream) -> TokenStream {
     expand_once(attr, item)
@@ -74,6 +91,10 @@ pub fn once(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Attribute macro to cache the result of functions in a struct impl block or
 /// trait impl block.
+///
+/// Every non-`#[once]` member of the block is preserved verbatim; `#[once]`
+/// methods may return `Self`, and each once method's cache is shared across
+/// all instances of the type.
 ///
 /// See the `once_fn` crate for documentation.
 ///

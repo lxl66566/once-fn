@@ -2,7 +2,8 @@
 //!
 //! The [`once`] attribute caches the result of the annotated function: the
 //! first call runs the body, and every later call returns a clone of the cached
-//! result without running the body again.
+//! result without running the body again. The arguments of later calls have no
+//! effect on the result.
 //!
 //! # Examples
 //!
@@ -145,12 +146,35 @@
 //! The async cache is [`AsyncOnceCell`], a runtime-agnostic asynchronous once
 //! cell that can also be used directly.
 //!
+//! # Semantics
+//!
+//! - Only the first call runs the body; arguments of later calls are still
+//!   evaluated at the call site, but the body does not run, so they have no
+//!   effect on the result.
+//! - A failing first attempt caches nothing: if the body panics, or an async
+//!   initializer is cancelled before it finishes, the next call runs the body
+//!   again, so the body may run more than once.
+//! - Concurrent first calls run the body exactly once: sync callers block
+//!   inside `get_or_init` until the value is available, while async callers
+//!   park as futures and are woken when the value is stored, without blocking
+//!   any thread. The async initializer is polled inside the first caller's
+//!   task: nothing is spawned, and awaiting other once fns inside the body is
+//!   fine, though synchronous stretches of the body run on that task.
+//! - Every returned value is cached, failures included: after a first call
+//!   returns `Err(..)`, every later call returns the same `Err` again.
+//! - The cached value is never dropped and lives until process exit; the only
+//!   exception is `#[once(resettable)]`, whose `<function>_reset` drops it.
+//! - A once method's cache is one static per function, shared across all
+//!   instances of the type.
+//!
 //! # Panics
 //!
 //! If a once function is called again while its body is running (directly or
 //! indirectly, on the same thread), the reentrant call panics with a clear
 //! message instead of deadlocking on the cache. An async once fn awaited again
-//! from inside its own initializing body panics the same way.
+//! from inside its own initializing body panics the same way. Cross-thread
+//! reentrancy, where the initializing thread and the re-entering thread end up
+//! waiting on each other, is not detected and still deadlocks.
 //!
 //! # Limitations
 //!
@@ -166,7 +190,8 @@
 //!   is rejected for the same reason.
 //! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `->
 //!   &dyn Trait`).
-//! - `#[once(resettable)]` on an `async fn`.
+//! - `#[once(resettable)]` on an `async fn`, on a reference return type, or
+//!   inside an `#[once_impl]` block.
 
 mod async_once_cell;
 
