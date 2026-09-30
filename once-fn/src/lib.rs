@@ -119,6 +119,27 @@
 //! assert_eq!(stamped(), 2); // runs again
 //! ```
 //!
+//! # Async
+//!
+//! [`AsyncOnceCell`] is a runtime-agnostic asynchronous once cell backed only
+//! by `std`: the first future to poll it runs its initializer in the caller's
+//! task context, later and concurrent callers share the result, and a dropped
+//! or panicking initializer lets the next call try again. See the type docs
+//! for details.
+//!
+//! ```
+//! use once_fn::AsyncOnceCell;
+//!
+//! static CELL: AsyncOnceCell<u32> = AsyncOnceCell::new();
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let a = CELL.get_or_init(|| async { 7 }).await;
+//!     let b = CELL.get_or_init(|| async { unreachable!() }).await;
+//!     assert_eq!((a, b), (&7, &7));
+//! }
+//! ```
+//!
 //! # Panics
 //!
 //! If a once function is called again while its body is running (directly or
@@ -139,8 +160,13 @@
 //!   is rejected for the same reason.
 //! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `->
 //!   &dyn Trait`).
+//! - `#[once(resettable)]` on an `async fn`.
 //!
 //! `async fn` is accepted, but a body containing `.await` does not compile yet.
 
+mod async_once_cell;
+
+#[doc(inline)]
+pub use async_once_cell::AsyncOnceCell;
 #[doc(inline)]
 pub use once_fn_macros::{once, once_impl};
