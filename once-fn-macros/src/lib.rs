@@ -126,18 +126,21 @@ pub fn once_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
 
     let struct_name = &input.self_ty;
-    let struct_name_quoted = quote!(#struct_name);
     let impl_trait = &input.trait_;
-    let trait_name = &input.trait_.as_ref().map(|t| &t.1).map(|t| quote!(#t));
+    let trait_name = impl_trait.as_ref().map(|t| &t.1).map(|t| quote!(#t));
+    let unsafety = &input.unsafety;
     let impl_attrs = &input.attrs;
+    // split_for_impl keeps the `<...>` params here; the trait and self types
+    // already carry their own arguments as written by the user
+    let (impl_generics, _, where_clause) = input.generics.split_for_impl();
 
     let impl_output = if let Some((not, impl_output, for_)) = impl_trait {
-        quote!(impl #not #impl_output #for_ #struct_name)
+        quote!(#unsafety impl #impl_generics #not #impl_output #for_ #struct_name #where_clause)
     } else {
-        quote!(impl #struct_name)
+        quote!(#unsafety impl #impl_generics #struct_name #where_clause)
     };
 
-    let mut generated_fns = Vec::new();
+    let mut generated_items = Vec::new();
     let mut generated_statics = Vec::new();
     for item in input.items.iter() {
         if let syn::ImplItem::Fn(method) = item {
@@ -145,22 +148,24 @@ pub fn once_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
             if is_once {
                 let (static_var_def, fn_def) = parse_once_fn!(
                     method,
-                    struct_name_quoted,
+                    quote!(#struct_name),
                     trait_name.as_ref().unwrap_or(&quote! {})
                 );
-                generated_fns.push(fn_def);
                 generated_statics.push(static_var_def);
+                generated_items.push(fn_def);
+                continue;
             }
-        } else {
-            generated_fns.push(quote! {item});
         }
+        // keep every non-once member verbatim: functions, consts, type aliases,
+        // macro calls, ...
+        generated_items.push(quote! { #item });
     }
     let r#gen = quote! {
         #(#generated_statics)*
 
         #(#impl_attrs)*
         #impl_output {
-            #(#generated_fns)*
+            #(#generated_items)*
         }
     };
 
