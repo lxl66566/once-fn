@@ -1,14 +1,13 @@
 [package]
-authors                = ["Absolutex <lxl66566@gmail.com>"]
-categories             = ["rust-patterns"]
-description            = "procedural macros for the once-fn crate"
-edition.workspace      = true
-keywords               = ["once", "proc-macro", "cache"]
-license.workspace      = true
 name                   = "once-fn-macros"
-repository.workspace   = true
-rust-version.workspace = true
 version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+description            = "procedural macros for the once-fn crate"
+repository.workspace   = true
+license.workspace      = true
+keywords               = ["cache", "once", "proc-macro"]
+categories             = ["rust-patterns"]
 
 [lib]
 proc-macro = true

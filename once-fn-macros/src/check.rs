@@ -25,7 +25,8 @@ pub(crate) fn check_fn(sig: &Signature, cfg: &OnceAttr, in_impl: bool) -> Vec<Er
     {
         errors.push(Error::new_spanned(
             arg,
-            "impl Trait in argument position is a hidden generic parameter: all monomorphizations would share one cache",
+            "impl Trait in argument position is a hidden generic parameter: all monomorphizations \
+             would share one cache",
         ));
     }
 
@@ -46,14 +47,16 @@ pub(crate) fn check_fn(sig: &Signature, cfg: &OnceAttr, in_impl: bool) -> Vec<Er
         if contains_impl_trait(ty) {
             errors.push(Error::new_spanned(
                 ty,
-                "`impl Trait` in return type is not supported: the cache must store a nameable type",
+                "`impl Trait` in return type is not supported: the cache must store a nameable \
+                 type",
             ));
         }
         if let Type::Reference(reference) = ty {
             if reference.mutability.is_some() {
                 errors.push(Error::new_spanned(
                     reference,
-                    "mutable references cannot be cached: they would allow mutation of the cached value",
+                    "mutable references cannot be cached: they would allow mutation of the cached \
+                     value",
                 ));
             } else if is_dst(&reference.elem) {
                 errors.push(Error::new_spanned(
@@ -75,7 +78,8 @@ pub(crate) fn check_fn(sig: &Signature, cfg: &OnceAttr, in_impl: bool) -> Vec<Er
         if in_impl {
             errors.push(Error::new_spanned(
                 &sig.ident,
-                "resettable is not supported inside `#[once_impl]`: the hoisted cache static could not name `Self`",
+                "resettable is not supported inside `#[once_impl]`: the hoisted cache static \
+                 could not name `Self`",
             ));
         }
         if sig.asyncness.is_some() {
@@ -106,15 +110,17 @@ pub(crate) fn check_impl(imp: &ItemImpl) -> Vec<Error> {
     imp.items
         .iter()
         .filter_map(|item| match item {
-            ImplItem::Fn(method) if has_once(&method.attrs) => {
-                method.attrs.iter().find(|attr| attr.path().is_ident("once"))
-            }
+            ImplItem::Fn(method) if has_once(&method.attrs) => method
+                .attrs
+                .iter()
+                .find(|attr| attr.path().is_ident("once")),
             _ => None,
         })
         .map(|attr| {
             Error::new_spanned(
                 attr,
-                "generic impls are not supported: all monomorphizations of `#[once]` methods would share one cache",
+                "generic impls are not supported: all monomorphizations of `#[once]` methods \
+                 would share one cache",
             )
         })
         .collect()
@@ -144,7 +150,7 @@ fn is_dst(ty: &Type) -> bool {
         Type::Path(tp) => {
             // bare `str`
             tp.qself.is_none() && tp.path.get_ident().is_some_and(|ident| ident == "str")
-        }
+        },
         Type::Tuple(t) => t.elems.last().is_some_and(is_dst),
         _ => false,
     }
@@ -168,7 +174,7 @@ fn contains_impl_trait(ty: &Type) -> bool {
             syn::PathArguments::Parenthesized(p) => {
                 p.inputs.iter().any(contains_impl_trait)
                     || matches!(&p.output, syn::ReturnType::Type(_, t) if contains_impl_trait(t))
-            }
+            },
             syn::PathArguments::None => false,
         }),
         _ => false,

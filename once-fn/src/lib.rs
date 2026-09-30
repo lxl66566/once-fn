@@ -148,24 +148,21 @@
 //!
 //! # Semantics
 //!
-//! - Only the first call runs the body; arguments of later calls are still
-//!   evaluated at the call site, but the body does not run, so they have no
-//!   effect on the result.
-//! - A failing first attempt caches nothing: if the body panics, or an async
-//!   initializer is cancelled before it finishes, the next call runs the body
-//!   again, so the body may run more than once.
-//! - Concurrent first calls run the body exactly once: sync callers block
-//!   inside `get_or_init` until the value is available, while async callers
-//!   park as futures and are woken when the value is stored, without blocking
-//!   any thread. The async initializer is polled inside the first caller's
-//!   task: nothing is spawned, and awaiting other once fns inside the body is
-//!   fine, though synchronous stretches of the body run on that task.
-//! - Every returned value is cached, failures included: after a first call
-//!   returns `Err(..)`, every later call returns the same `Err` again.
-//! - The cached value is never dropped and lives until process exit; the only
-//!   exception is `#[once(resettable)]`, whose `<function>_reset` drops it.
-//! - A once method's cache is one static per function, shared across all
-//!   instances of the type.
+//! - Only the first call runs the body; arguments of later calls are still evaluated at the call
+//!   site, but the body does not run, so they have no effect on the result.
+//! - A failing first attempt caches nothing: if the body panics, or an async initializer is
+//!   cancelled before it finishes, the next call runs the body again, so the body may run more than
+//!   once.
+//! - Concurrent first calls run the body exactly once: sync callers block inside `get_or_init`
+//!   until the value is available, while async callers park as futures and are woken when the value
+//!   is stored, without blocking any thread. The async initializer is polled inside the first
+//!   caller's task: nothing is spawned, and awaiting other once fns inside the body is fine, though
+//!   synchronous stretches of the body run on that task.
+//! - Every returned value is cached, failures included: after a first call returns `Err(..)`, every
+//!   later call returns the same `Err` again.
+//! - The cached value is never dropped and lives until process exit; the only exception is
+//!   `#[once(resettable)]`, whose `<function>_reset` drops it.
+//! - A once method's cache is one static per function, shared across all instances of the type.
 //!
 //! # Panics
 //!
@@ -184,14 +181,12 @@
 //!
 //! The following forms are rejected at compile time:
 //!
-//! - generic functions and generic impls (lifetime-only generics are fine): the
-//!   cache is one static shared by all monomorphizations, so caching would
-//!   silently mix instantiations; `impl Trait` in argument or return position
-//!   is rejected for the same reason.
-//! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `->
-//!   &dyn Trait`).
-//! - `#[once(resettable)]` on an `async fn`, on a reference return type, or
-//!   inside an `#[once_impl]` block.
+//! - generic functions and generic impls (lifetime-only generics are fine): the cache is one static
+//!   shared by all monomorphizations, so caching would silently mix instantiations; `impl Trait` in
+//!   argument or return position is rejected for the same reason.
+//! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `-> &dyn Trait`).
+//! - `#[once(resettable)]` on an `async fn`, on a reference return type, or inside an
+//!   `#[once_impl]` block.
 
 mod async_once_cell;
 

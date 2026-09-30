@@ -8,7 +8,7 @@ static RUNS: AtomicUsize = AtomicUsize::new(0);
 static DROPS: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
-struct Tracked(u32);
+struct Tracked(usize);
 
 impl Drop for Tracked {
     fn drop(&mut self) {
@@ -21,7 +21,7 @@ mod inner {
 
     #[once(resettable)]
     pub fn make() -> Tracked {
-        Tracked(RUNS.fetch_add(1, Ordering::SeqCst) as u32 + 1)
+        Tracked(RUNS.fetch_add(1, Ordering::SeqCst) + 1)
     }
 }
 

@@ -22,9 +22,12 @@ impl Storage {
     /// `self_ty` substitutes `Self` in the stored type; it is `None` for free
     /// functions.
     fn of(sig: &Signature, self_ty: Option<&Type>) -> Storage {
-        let subst = |ty: &Type| match self_ty {
-            Some(self_ty) => subst_self(ty, self_ty),
-            None => quote! { #ty },
+        let subst = |ty: &Type| {
+            if let Some(self_ty) = self_ty {
+                subst_self(ty, self_ty)
+            } else {
+                quote! { #ty }
+            }
         };
         match &sig.output {
             ReturnType::Default => Storage::Owned(quote! { () }),
@@ -32,7 +35,7 @@ impl Storage {
                 Type::Reference(r) => {
                     let pointee = subst(&r.elem);
                     Storage::Pointee(pointee)
-                }
+                },
                 _ => Storage::Owned(subst(ty)),
             },
         }
@@ -72,7 +75,8 @@ fn expand_resettable_fn(input: &ItemFn) -> TokenStream {
     let static_name = format_ident!("__ONCE_{}", unraw(fn_name));
     let reset_name = format_ident!("{}_reset", unraw(fn_name));
     let reset_doc = format!(
-        "Reset the cached value of `{fn_name}`; the next call runs the function again and the old value is dropped."
+        "Reset the cached value of `{fn_name}`; the next call runs the function again and the old \
+         value is dropped."
     );
 
     let cache_call = quote! {
@@ -80,7 +84,7 @@ fn expand_resettable_fn(input: &ItemFn) -> TokenStream {
         let mut __g = #static_name.lock().unwrap_or_else(|__e| __e.into_inner());
         __g.get_or_insert_with(move || #block).clone()
     };
-    let guarded = reentrancy_guard(fn_name, cache_call);
+    let guarded = reentrancy_guard(fn_name, &cache_call);
 
     quote! {
         #[doc(hidden)]
@@ -107,11 +111,10 @@ pub(crate) fn expand_impl(input: &ItemImpl) -> TokenStream {
     // types already carry their own arguments as written by the user
     let (impl_generics, _, where_clause) = input.generics.split_for_impl();
 
-    let impl_head = match &input.trait_ {
-        Some((not, path, for_)) => {
-            quote! { #unsafety impl #impl_generics #not #path #for_ #self_ty #where_clause }
-        }
-        None => quote! { #unsafety impl #impl_generics #self_ty #where_clause },
+    let impl_head = if let Some((not, path, for_)) = &input.trait_ {
+        quote! { #unsafety impl #impl_generics #not #path #for_ #self_ty #where_clause }
+    } else {
+        quote! { #unsafety impl #impl_generics #self_ty #where_clause }
     };
 
     let mut items = Vec::new();
@@ -119,7 +122,7 @@ pub(crate) fn expand_impl(input: &ItemImpl) -> TokenStream {
         match item {
             syn::ImplItem::Fn(method) if has_once(&method.attrs) => {
                 items.push(expand_method(method, self_ty));
-            }
+            },
             // keep every non-once member verbatim: functions, consts, type
             // aliases, macro calls, ...
             _ => items.push(quote! { #item }),
@@ -164,10 +167,10 @@ fn sync_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> T
         // be confused by method resolution
         Storage::Pointee(_) => {
             quote! { __ONCE.get_or_init(move || ::core::clone::Clone::clone(#block)) }
-        }
+        },
         Storage::Owned(_) => quote! { __ONCE.get_or_init(move || #block).clone() },
     };
-    let guarded = reentrancy_guard(&sig.ident, cache_call);
+    let guarded = reentrancy_guard(&sig.ident, &cache_call);
     quote! {
         {
             // `OnceLock` lives in `std`, not `core` (probed on nightly 1.101)
@@ -190,10 +193,10 @@ fn async_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> 
         // `&'static` it carries outlives every caller via covariance
         Storage::Pointee(_) => {
             quote! { __ONCE.get_or_init(move || async move { ::core::clone::Clone::clone(#block) }).await }
-        }
+        },
         Storage::Owned(_) => {
             quote! { __ONCE.get_or_init(move || async move { #block }).await.clone() }
-        }
+        },
     };
     quote! {
         {
@@ -208,7 +211,7 @@ fn async_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> 
 /// panics with a clear message instead. The guard resets the flag on unwind:
 /// `OnceLock` retries the initializer after a panic, so the flag must not stay
 /// stuck.
-fn reentrancy_guard(fn_name: &syn::Ident, inner: TokenStream) -> TokenStream {
+fn reentrancy_guard(fn_name: &Ident, inner: &TokenStream) -> TokenStream {
     let msg = format!(
         "`{fn_name}` re-entered while it is initializing; a once fn cannot call itself recursively"
     );
@@ -244,30 +247,30 @@ fn subst_self(ty: &Type, self_ty: &Type) -> TokenStream {
             let mutability = &r.mutability;
             let elem = subst_self(&r.elem, self_ty);
             quote! { & #lifetime #mutability #elem }
-        }
+        },
         Type::Ptr(p) => {
             let const_token = &p.const_token;
             let mutability = &p.mutability;
             let elem = subst_self(&p.elem, self_ty);
             quote! { * #const_token #mutability #elem }
-        }
+        },
         Type::Slice(s) => {
             let elem = subst_self(&s.elem, self_ty);
             quote! { [#elem] }
-        }
+        },
         Type::Array(a) => {
             let elem = subst_self(&a.elem, self_ty);
             let len = &a.len;
             quote! { [#elem; #len] }
-        }
+        },
         Type::Paren(p) => {
             let elem = subst_self(&p.elem, self_ty);
             quote! { (#elem) }
-        }
+        },
         Type::Tuple(t) => {
             let elems = t.elems.iter().map(|e| subst_self(e, self_ty));
             quote! { (#(#elems ,)*) }
-        }
+        },
         _ => quote! { #ty },
     }
 }
@@ -308,7 +311,7 @@ fn subst_self_segment(seg: &PathSegment, self_ty: &Type) -> TokenStream {
                 other => quote! { #other },
             });
             quote! { #ident #colon2 < #(#args),* > }
-        }
+        },
         PathArguments::Parenthesized(p) => {
             let inputs = p.inputs.iter().map(|t| subst_self(t, self_ty));
             let output = match &p.output {
@@ -316,10 +319,10 @@ fn subst_self_segment(seg: &PathSegment, self_ty: &Type) -> TokenStream {
                 ReturnType::Type(arrow, ty) => {
                     let ty = subst_self(ty, self_ty);
                     quote! { #arrow #ty }
-                }
+                },
             };
             quote! { #ident (#(#inputs),*) #output }
-        }
+        },
     }
 }
 

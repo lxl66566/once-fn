@@ -4,7 +4,11 @@ use once_fn::once;
 
 #[once]
 fn fact(n: u64) -> u64 {
-    if n <= 1 { 1 } else { n * fact(n - 1) }
+    if n <= 1 {
+        1
+    } else {
+        n * fact(n - 1)
+    }
 }
 
 #[test]

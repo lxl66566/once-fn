@@ -12,9 +12,7 @@ static CALLS: AtomicUsize = AtomicUsize::new(0);
 #[once]
 fn flaky() -> u32 {
     let calls = CALLS.fetch_add(1, Ordering::SeqCst) + 1;
-    if calls == 1 {
-        panic!("first call must fail");
-    }
+    assert!(calls != 1, "first call must fail");
     42
 }
 

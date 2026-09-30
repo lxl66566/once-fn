@@ -1,13 +1,27 @@
 [workspace]
-members  = ["once-fn", "once-fn-macros"]
 resolver = "2"
-
-[workspace.lints.clippy]
-cargo = "warn"
+members  = ["once-fn", "once-fn-macros"]
 
 [workspace.package]
-edition      = "2024"
-license      = "MIT"
-repository   = "https://github.com/lxl66566/once-fn"
-rust-version = "1.85"
 version      = "0.3.0"
+edition      = "2024"
+rust-version = "1.85"
+repository   = "https://github.com/lxl66566/once-fn"
+license      = "MIT"
+
+[workspace.dependencies]
+once-fn-macros = { path = "once-fn-macros", version = "0.3.0" }
+
+[workspace.lints.clippy]
+all                     = { level = "warn", priority = -1 }
+cargo                   = { level = "warn", priority = -1 }
+doc_markdown            = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+multiple_crate_versions = "allow"
+pedantic                = { level = "warn", priority = -1 }
+wildcard_imports        = "allow"
+
+[workspace.lints.rust]
+unsafe_code           = "allow"
+unused_qualifications = "warn"

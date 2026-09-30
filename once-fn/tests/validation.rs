@@ -12,6 +12,7 @@ impl Foo {
     fn new() -> Foo {
         Foo(true)
     }
+
     fn next(&mut self) -> bool {
         self.0 = !self.0;
         self.0

@@ -9,7 +9,7 @@ struct Foo {
 
 impl Foo {
     fn outside_impl(&self, x: u32) -> u32 {
-        x + 1
+        self.base + x
     }
 }
 
@@ -62,7 +62,7 @@ impl HasPair for Foo {
 #[test]
 fn members_preserved() {
     let foo = Foo { base: 10 };
-    assert_eq!(foo.outside_impl(1), 2);
+    assert_eq!(foo.outside_impl(1), 11);
     assert_eq!(Foo::ID, 7);
     assert_eq!(foo.plain(5), 15);
     assert_eq!(Foo::cached(21), 42);

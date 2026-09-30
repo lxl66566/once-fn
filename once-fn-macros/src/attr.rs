@@ -13,7 +13,7 @@ pub(crate) struct OnceAttr {
 const UNEXPECTED_ARG: &str = "unexpected attribute argument, expected `resettable`";
 
 /// Parse the argument list of the `once` attribute macro.
-pub(crate) fn parse_once_args(args: TokenStream) -> syn::Result<OnceAttr> {
+pub(crate) fn parse_once_args(args: &TokenStream) -> syn::Result<OnceAttr> {
     if args.is_empty() {
         return Ok(OnceAttr::default());
     }

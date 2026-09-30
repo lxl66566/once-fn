@@ -121,10 +121,11 @@ impl<T> AsyncOnceCell<T> {
     /// Waiter-side reentrancy check: panics if this cell's initializer is on
     /// the current thread's stack, meaning the caller would wait for itself.
     fn assert_not_reentrant(&self) {
-        let addr = self as *const Self as usize;
-        if POLLING.with(|p| p.get()) == addr {
-            panic!("an async once fn was re-entered while it is initializing; this would deadlock");
-        }
+        let addr = std::ptr::from_ref::<Self>(self) as usize;
+        assert!(
+            POLLING.with(Cell::get) != addr,
+            "an async once fn was re-entered while it is initializing; this would deadlock"
+        );
     }
 
     /// # Safety
@@ -135,6 +136,9 @@ impl<T> AsyncOnceCell<T> {
     /// pair that stored it happens-before any later lock, so readers observe a
     /// fully initialized value. This is the only way a reference may outlive
     /// the state lock it was taken under.
+    // the receiver is unused on purpose: it binds the returned reference's
+    // lifetime and the pointer's provenance to this cell
+    #[allow(clippy::unused_self)]
     unsafe fn ready_ref(&self, ptr: *const T) -> &T {
         unsafe { &*ptr }
     }
@@ -142,7 +146,9 @@ impl<T> AsyncOnceCell<T> {
     fn lock(&self) -> MutexGuard<'_, State<T>> {
         // a poisoned lock means an initializer panicked; the state is still
         // consistent, so keep going like `OnceLock` does
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -185,7 +191,7 @@ where
                 State::Ready(v) => {
                     let ptr: *const T = v;
                     return Poll::Ready(unsafe { this.cell.ready_ref(ptr) });
-                }
+                },
                 State::New => *state = State::Init { wakers: Vec::new() },
                 State::Init { wakers } if this.fut.is_none() => {
                     this.cell.assert_not_reentrant();
@@ -194,8 +200,8 @@ where
                         wakers.push(cx.waker().clone());
                     }
                     return Poll::Pending;
-                }
-                State::Init { .. } => {}
+                },
+                State::Init { .. } => {},
             }
         }
         // the lock is released before any user code runs
@@ -211,7 +217,7 @@ where
         // Poll the user future in the caller's context: the waker it registers
         // drives this future to completion, so a `Pending` result needs no
         // bookkeeping of our own.
-        let saved = POLLING.with(|p| p.replace(this.cell as *const _ as usize));
+        let saved = POLLING.with(|p| p.replace(std::ptr::from_ref(this.cell) as usize));
         let _restore = RestorePolling(saved);
         let out = this
             .fut
@@ -228,9 +234,8 @@ where
                 let (ptr, wakers): (*const T, Vec<Waker>) = {
                     let mut state = this.cell.lock();
                     let old = mem::replace(&mut *state, State::Ready(v));
-                    let ptr = match &*state {
-                        State::Ready(v) => v,
-                        _ => unreachable!("`Ready` was just stored"),
+                    let State::Ready(ptr) = &*state else {
+                        unreachable!("`Ready` was just stored")
                     };
                     match old {
                         State::Init { wakers } => (ptr, wakers),
@@ -241,7 +246,7 @@ where
                     waker.wake();
                 }
                 Poll::Ready(unsafe { this.cell.ready_ref(ptr) })
-            }
+            },
         }
     }
 }
@@ -333,10 +338,10 @@ mod tests {
         }
     }
 
-    fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         payload
             .downcast_ref::<&str>()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .or_else(|| payload.downcast_ref::<String>().cloned())
             .expect("panic payload is a string")
     }
@@ -369,22 +374,22 @@ mod tests {
             value: 0,
         });
 
-        let wakes = Arc::new(AtomicUsize::new(0));
-        let waker = Waker::from(Arc::new(CountWaker(wakes.clone())));
+        let wake_count = Arc::new(AtomicUsize::new(0));
+        let waker = Waker::from(Arc::new(CountWaker(wake_count.clone())));
         let mut waiter_cx = Context::from_waker(&waker);
         let mut init_cx = Context::from_waker(Waker::noop());
 
         assert_eq!(poll_unpin(&mut init, &mut init_cx), Poll::Pending); // body started, gate closed
         assert_eq!(runs.get(), 1);
         assert_eq!(poll_unpin(&mut waiter, &mut waiter_cx), Poll::Pending); // parked as waiter
-        assert_eq!(wakes.load(Ordering::SeqCst), 0);
+        assert_eq!(wake_count.load(Ordering::SeqCst), 0);
 
         open.set(true);
         let Poll::Ready(first) = poll_unpin(&mut init, &mut init_cx) else {
             panic!("initializer finished")
         };
         assert_eq!(*first, 42);
-        assert_eq!(wakes.load(Ordering::SeqCst), 1); // waiter was woken
+        assert_eq!(wake_count.load(Ordering::SeqCst), 1); // waiter was woken
 
         let Poll::Ready(second) = poll_unpin(&mut waiter, &mut waiter_cx) else {
             panic!("waiter resolved")
@@ -410,8 +415,8 @@ mod tests {
             }
         };
 
-        let wakes = Arc::new(AtomicUsize::new(0));
-        let waker = Waker::from(Arc::new(CountWaker(wakes.clone())));
+        let wake_count = Arc::new(AtomicUsize::new(0));
+        let waker = Waker::from(Arc::new(CountWaker(wake_count.clone())));
         let mut cx = Context::from_waker(&waker);
 
         let mut init = cell.get_or_init(make.clone());
@@ -422,7 +427,7 @@ mod tests {
         assert_eq!(runs.get(), 1);
 
         drop(init); // cancelled: the cell rolls back and wakes the waiter
-        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+        assert_eq!(wake_count.load(Ordering::SeqCst), 1);
 
         // the waiter claims initialization and runs the body again
         assert_eq!(poll_unpin(&mut waiter, &mut cx), Poll::Pending);
@@ -534,7 +539,9 @@ mod tests {
 
         let payload = catch_unwind(AssertUnwindSafe(|| poll_unpin(&mut init, &mut cx)))
             .expect_err("must panic");
-        let message = panic_message(payload);
+        // `&*` must be explicit: `&payload` would unsizing-coerce the `Box`
+        // itself into the trait object, so every downcast inside would miss
+        let message = panic_message(&*payload);
         assert!(
             message.contains("re-entered while it is initializing"),
             "unexpected message: {message}"

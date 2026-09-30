@@ -1,6 +1,6 @@
 # once-fn
 
-Make a function run only once: the first call runs the body and caches its result, and every later call returns the cached result without running the body again. Sync functions, `async fn` and methods in impl blocks are all supported.
+Make a function run only once: every later call returns the cached result of the first run. Sync functions, `async fn` and methods in impl blocks are all supported.
 
 ## Example
 
@@ -14,11 +14,11 @@ fn foo(b: bool) -> bool {
     b
 }
 
-assert!(foo(true)); // runs the body and caches `true`
+assert!(foo(true));  // runs the body and caches `true`
 assert!(foo(false)); // returns the cached `true`, the body is not run again
 ```
 
-`async fn`, runtime-agnostic (no task is spawned, no thread blocks):
+`async fn`, runtime-agnostic:
 
 ```rust
 use once_fn::once;
@@ -71,7 +71,7 @@ The declared return type decides what the cache stores:
   let one = 1;
   let a = first(&one);
   let two = 2;
-  assert_eq!(first(&two), a); // later arguments are ignored
+  assert_eq!(first(&two), a);
   ```
 
 - `-> Arc<T>`: the cache stores the `Arc` and each call bumps the reference counter, so `T` does not need `Clone` and callers share one allocation. This is the recommended pattern for large values.
@@ -112,33 +112,48 @@ The declared return type decides what the cache stores:
 
 ## Semantics
 
-- Only the first call runs the body. Later calls still evaluate their arguments at the call site, but the body does not run, so the arguments have no effect on the result.
+- Only the first call runs the body. Later calls still evaluate their arguments at the call site, but the body does not run.
 - If the first call panics, nothing is cached and the next call runs the body again; the body of a once fn may therefore run more than once in the presence of panics or cancellations. For `async fn`, dropping the initializing future before it finishes (task abort, timeout) or a panic in the body rolls the cache back the same way.
-- Concurrent first calls run the body exactly once. The sync path blocks inside `get_or_init` until the value is available; the async path parks concurrent callers as futures and wakes them when the value is stored, so no thread blocks.
-- `Err` is cached like any other return value: after a first call that returns `Err(..)`, every later call returns the same `Err` again. Use `#[once(resettable)]` if failures must be retried.
-- The cached value lives until process exit and is never dropped; `<name>_reset` is the only way to drop it.
+- Concurrent first calls run the body exactly once.
+- The cached value lives until process exit and is never dropped; `reset` is the only way to drop it.
 - A once method's cache is one static per function, shared across all instances of the type: `a.load()` and `b.load()` return the same cached value.
 - Reentrancy: calling a once fn again while its body is running on the same thread (or awaiting an async once fn from inside its own initializing body) panics with a clear message instead of deadlocking. Cross-thread reentrancy, where thread A is initializing and thread B re-enters and the two end up waiting on each other, is not detected and still deadlocks.
 - The async initializer runs inside the first caller's task context: nothing is spawned and no thread blocks, but synchronous stretches of the body run on that task. Awaiting other once fns inside the body is supported (each function has its own cell).
 
 ## Limitations
 
-The following forms are rejected at compile time with precise diagnostics:
+The following forms are rejected at compile time:
 
 - Type or const generic functions, and generic impls containing `#[once]` methods (lifetime-only generics are fine): one cache would be shared by all monomorphizations. `impl Trait` in argument or return position is rejected for the same reason.
 - `const fn`: the cache requires runtime initialization.
 - `-> &mut T` returns: they would allow mutation of the cached value.
 - DST pointees such as `-> &str`, `-> &[T]` or `-> &dyn Trait`: the pointee must be `Sized`.
 - `#[once(resettable)]` on `async fn`, on reference returns, or inside `#[once_impl]`.
-- Applying `#[once]` to a whole impl block (use `#[once_impl]` instead), a free function with a `self` receiver (use `#[once_impl]`), unrecognized attribute arguments, and arguments passed to `#[once_impl]` itself.
 
 See [tests](./once-fn/tests/) for more examples.
 
+## Why not
+
+- `cached::proc_macro::once`
+  - does not support async fn
+  - does not support generics (in input)
+  - does not support reference (in return type)
+  - does not support use in impl block
+- `fn-once`
+  - Almost no docs; I don't know what it actually do.
+  - It can't even compile its example
+
 ## MSRV
 
-1.85 (edition 2024).
+1.85
 
 ## Why not
 
-- `cached::proc_macro::once`: the closest equivalent; it also caches a single value and ignores later arguments. It offers TTL expiry (`ttl_secs`), `force_refresh`, skipping `None`/`Err` results and companion functions, which this crate does not. In exchange, once-fn supports reference returns, applies to whole impl blocks via `#[once_impl]` while preserving the other members, can drop and recompute the cache at runtime via `#[once(resettable)]`, and rejects unsupported forms with precise compile-time diagnostics; `cached` requires the return type to be owned and `Clone`.
-- `fn-once`: a `FnOnce`-style "call at most once" macro for a different purpose, not result caching, and it ships no documentation.
+- `cached::proc_macro::once`
+  - does not support async fn
+  - does not support generics (in input)
+  - does not support reference (in return type)
+  - does not support use in impl block
+- `fn-once`
+  - Almost no docs; I don't know what it actually do.
+  - It can't even compile its example

@@ -22,6 +22,7 @@ impl BarTrait for Bar {
     fn get0(&self) -> &Foo {
         &self.x
     }
+
     fn get1(&self) -> &Foo {
         &self.y
     }
@@ -55,24 +56,18 @@ impl Config {
 #[tokio::test]
 async fn complex_free_fn() {
     unsafe {
-        let x: Foo = foo(
-            Foo(1),
-            &Bar {
-                x: Foo(2),
-                y: Foo(3),
-            },
-        )
+        let x: Foo = foo(Foo(1), &Bar {
+            x: Foo(2),
+            y: Foo(3),
+        })
         .await;
         assert_eq!(x, Foo(6));
 
         // cached: same result even with different arguments, body not re-run
-        let y: Foo = foo(
-            Foo(100),
-            &Bar {
-                x: Foo(0),
-                y: Foo(0),
-            },
-        )
+        let y: Foo = foo(Foo(100), &Bar {
+            x: Foo(0),
+            y: Foo(0),
+        })
         .await;
         assert_eq!(y, Foo(6));
         assert_eq!(FOO_RUNS.load(Ordering::SeqCst), 1);

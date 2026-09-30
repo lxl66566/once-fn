@@ -39,9 +39,11 @@ use syn::{ItemFn, ItemImpl};
 /// }
 ///
 /// fn block_on<F: std::future::Future>(fut: F) -> F::Output {
-///     use std::sync::Arc;
-///     use std::task::{Context, Poll, Wake, Waker};
-///     use std::thread::{self, Thread};
+///     use std::{
+///         sync::Arc,
+///         task::{Context, Poll, Wake, Waker},
+///         thread::{self, Thread},
+///     };
 ///
 ///     struct ThreadWaker(Thread);
 ///
@@ -124,7 +126,7 @@ pub fn once_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 fn expand_once(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2::TokenStream> {
-    let cfg = attr::parse_once_args(attr.into())?;
+    let cfg = attr::parse_once_args(&attr.into())?;
 
     let tokens: proc_macro2::TokenStream = item.into();
     let fn_item = match syn::parse2::<ItemFn>(tokens.clone()) {
@@ -138,7 +140,7 @@ fn expand_once(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2:
                 ));
             }
             return Err(fn_err);
-        }
+        },
     };
 
     if let Some(error) = check::into_error(check::check_fn(&fn_item.sig, &cfg, false)) {

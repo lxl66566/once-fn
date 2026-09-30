@@ -1,18 +1,17 @@
 [package]
-authors                = ["Absolutex <lxl66566@gmail.com>"]
-categories             = ["rust-patterns"]
-description            = "cache the result of a function so its body runs only once"
-edition.workspace      = true
-keywords               = ["once", "proc-macro", "cache"]
-license.workspace      = true
 name                   = "once-fn"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+description            = "cache the result of a function so its body runs only once"
 readme                 = "../README.md"
 repository.workspace   = true
-rust-version.workspace = true
-version.workspace      = true
+license.workspace      = true
+keywords               = ["cache", "once", "proc-macro"]
+categories             = ["rust-patterns"]
 
 [dependencies]
-once-fn-macros = { path = "../once-fn-macros", version = "0.3.0" }
+once-fn-macros = { workspace = true }
 
 [dev-dependencies]
 tokio    = { version = "1.53", features = ["full"] }
