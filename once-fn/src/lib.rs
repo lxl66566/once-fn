@@ -97,6 +97,28 @@
 //! assert_eq!(a.0.len(), 4096);
 //! ```
 //!
+//! `#[once(resettable)]` switches to a resettable cache and generates a
+//! companion `<function>_reset` function with the same visibility: calling it
+//! drops the cached value, so the next call runs the body again.
+//!
+//! ```
+//! use std::sync::atomic::{AtomicUsize, Ordering};
+//!
+//! use once_fn::once;
+//!
+//! static RUNS: AtomicUsize = AtomicUsize::new(0);
+//!
+//! #[once(resettable)]
+//! fn stamped() -> usize {
+//!     RUNS.fetch_add(1, Ordering::SeqCst) + 1
+//! }
+//!
+//! assert_eq!(stamped(), 1);
+//! assert_eq!(stamped(), 1); // cached
+//! stamped_reset();
+//! assert_eq!(stamped(), 2); // runs again
+//! ```
+//!
 //! # Panics
 //!
 //! If a once function is called again while its body is running (directly or

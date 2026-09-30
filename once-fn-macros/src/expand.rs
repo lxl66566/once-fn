@@ -1,13 +1,13 @@
 //! Expansion of `#[once]` functions and `#[once_impl]` blocks.
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{
-    Attribute, Block, GenericArgument, ImplItemFn, ItemFn, ItemImpl, PathArguments, PathSegment,
-    ReturnType, Signature, Type, TypePath,
+    Attribute, Block, GenericArgument, Ident, ImplItemFn, ItemFn, ItemImpl, PathArguments,
+    PathSegment, ReturnType, Signature, Type, TypePath,
 };
 
-use crate::attr::has_once;
+use crate::attr::{OnceAttr, has_once};
 
 /// What the cache stores, derived from the declared return type.
 enum Storage {
@@ -46,12 +46,56 @@ impl Storage {
 }
 
 /// Expand a free `#[once]` function.
-pub(crate) fn expand_free_fn(input: &ItemFn) -> TokenStream {
+pub(crate) fn expand_free_fn(input: &ItemFn, cfg: &OnceAttr) -> TokenStream {
+    if cfg.resettable {
+        return expand_resettable_fn(input);
+    }
     let body = cached_body(&input.sig, &input.block, None);
     let attrs = without_once(&input.attrs);
     let vis = &input.vis;
     let sig = &input.sig;
     quote! { #(#attrs)* #vis #sig #body }
+}
+
+/// Expand `#[once(resettable)]`: the cache is a module-level
+/// `Mutex<Option<R>>` that a generated `<name>_reset` function can clear.
+fn expand_resettable_fn(input: &ItemFn) -> TokenStream {
+    let sig = &input.sig;
+    let fn_name = &sig.ident;
+    let attrs = without_once(&input.attrs);
+    let vis = &input.vis;
+    let block = &input.block;
+    // `resettable` is owned-only and Self-free, both enforced by diagnostics
+    let Storage::Owned(ty) = Storage::of(sig, None) else {
+        unreachable!("checked by diagnostics")
+    };
+    let static_name = format_ident!("__ONCE_{}", unraw(fn_name));
+    let reset_name = format_ident!("{}_reset", unraw(fn_name));
+    let reset_doc = format!(
+        "Reset the cached value of `{fn_name}`; the next call runs the function again and the old value is dropped."
+    );
+
+    let cache_call = quote! {
+        // a poisoned lock means the body panicked; retry like OnceLock does
+        let mut __g = #static_name.lock().unwrap_or_else(|__e| __e.into_inner());
+        __g.get_or_insert_with(move || #block).clone()
+    };
+    let guarded = reentrancy_guard(fn_name, cache_call);
+
+    quote! {
+        #[doc(hidden)]
+        static #static_name: ::std::sync::Mutex<::core::option::Option<#ty>> = ::std::sync::Mutex::new(None);
+
+        #(#attrs)*
+        #vis #sig {
+            #guarded
+        }
+
+        #[doc = #reset_doc]
+        #vis fn #reset_name() {
+            *#static_name.lock().unwrap_or_else(|__e| __e.into_inner()) = None;
+        }
+    }
 }
 
 /// Expand an `#[once_impl]` block.
@@ -248,4 +292,10 @@ fn without_once(attrs: &[Attribute]) -> Vec<&Attribute> {
         .iter()
         .filter(|attr| !attr.path().is_ident("once"))
         .collect()
+}
+
+/// `r#type` -> `type`: a generated identifier cannot keep the `r#` prefix.
+fn unraw(ident: &Ident) -> String {
+    let name = ident.to_string();
+    name.strip_prefix("r#").unwrap_or(&name).to_owned()
 }

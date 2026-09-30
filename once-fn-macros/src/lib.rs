@@ -85,7 +85,7 @@ fn expand_once(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2:
         return Err(error);
     }
 
-    Ok(expand::expand_free_fn(&fn_item))
+    Ok(expand::expand_free_fn(&fn_item, &cfg))
 }
 
 fn expand_once_impl(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2::TokenStream> {
