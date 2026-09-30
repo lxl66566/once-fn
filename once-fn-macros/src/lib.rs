@@ -1,10 +1,12 @@
 //! Procedural macros for the `once-fn` crate. Use the re-exports from
 //! `once_fn`.
 
+mod attr;
+mod check;
 mod expand;
 
 use proc_macro::TokenStream;
-use syn::{ItemFn, ItemImpl, parse_macro_input};
+use syn::{ItemFn, ItemImpl};
 
 /// Attribute macro to cache the result of a function, ensuring it only runs
 /// once.
@@ -25,9 +27,10 @@ use syn::{ItemFn, ItemImpl, parse_macro_input};
 /// assert!(foo(false)); // body is not run again
 /// ```
 #[proc_macro_attribute]
-pub fn once(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemFn);
-    expand::expand_free_fn(&input).into()
+pub fn once(attr: TokenStream, item: TokenStream) -> TokenStream {
+    expand_once(attr, item)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
 }
 
 /// Attribute macro to cache the result of functions in a struct impl block or
@@ -54,7 +57,59 @@ pub fn once(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// assert!(Foo::foo(false)); // body is not run again
 /// ```
 #[proc_macro_attribute]
-pub fn once_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemImpl);
-    expand::expand_impl(&input).into()
+pub fn once_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
+    expand_once_impl(attr, item)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
+}
+
+fn expand_once(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    let cfg = attr::parse_once_args(attr.into())?;
+
+    let tokens: proc_macro2::TokenStream = item.into();
+    let fn_item = match syn::parse2::<ItemFn>(tokens.clone()) {
+        Ok(fn_item) => fn_item,
+        Err(fn_err) => {
+            // `#[once]` on a whole impl block is a common mistake
+            if syn::parse2::<ItemImpl>(tokens).is_ok() {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "apply `#[once]` to methods inside an `#[once_impl]` block",
+                ));
+            }
+            return Err(fn_err);
+        }
+    };
+
+    if let Some(error) = check::into_error(check::check_fn(&fn_item.sig, &cfg, false)) {
+        return Err(error);
+    }
+
+    Ok(expand::expand_free_fn(&fn_item))
+}
+
+fn expand_once_impl(attr: TokenStream, item: TokenStream) -> syn::Result<proc_macro2::TokenStream> {
+    if !attr.is_empty() {
+        return Err(syn::Error::new_spanned(
+            proc_macro2::TokenStream::from(attr),
+            "`once_impl` does not accept any attribute arguments",
+        ));
+    }
+
+    let input: ItemImpl = syn::parse(item)?;
+
+    let mut errors = check::check_impl(&input);
+    for item in &input.items {
+        if let syn::ImplItem::Fn(method) = item {
+            if let Some(once_attr) = method.attrs.iter().find(|a| a.path().is_ident("once")) {
+                let cfg = attr::parse_once_attr(once_attr)?;
+                errors.extend(check::check_fn(&method.sig, &cfg, true));
+            }
+        }
+    }
+    if let Some(error) = check::into_error(errors) {
+        return Err(error);
+    }
+
+    Ok(expand::expand_impl(&input))
 }

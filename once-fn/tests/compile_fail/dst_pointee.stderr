@@ -1,0 +1,5 @@
+error: the pointee must be `Sized`
+ --> tests/compile_fail/dst_pointee.rs:4:21
+  |
+4 | fn foo(s: &str) -> &str {
+  |                     ^^^

@@ -15,7 +15,8 @@ version.workspace      = true
 once-fn-macros = { path = "../once-fn-macros", version = "0.3.0" }
 
 [dev-dependencies]
-tokio = { version = "1.53", features = ["full"] }
+tokio    = { version = "1.53", features = ["full"] }
+trybuild = "1.0.119"
 
 [lints]
 workspace = true

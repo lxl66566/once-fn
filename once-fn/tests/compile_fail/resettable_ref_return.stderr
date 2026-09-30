@@ -1,0 +1,5 @@
+error: resettable requires an owned return type
+ --> tests/compile_fail/resettable_ref_return.rs:4:4
+  |
+4 | fn foo(b: &bool) -> &bool {
+  |    ^^^

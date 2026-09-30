@@ -1,0 +1,5 @@
+error: generic functions are not supported: all monomorphizations would share one cache
+ --> tests/compile_fail/generic_fn.rs:4:8
+  |
+4 | fn foo<T: Clone>(a: T) -> T {
+  |        ^^^^^^^^

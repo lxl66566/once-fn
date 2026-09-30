@@ -7,6 +7,8 @@ use syn::{
     ReturnType, Signature, Type, TypePath,
 };
 
+use crate::attr::has_once;
+
 /// What the cache stores, derived from the declared return type.
 enum Storage {
     /// Cache the returned value; every call gets a clone of it.
@@ -208,10 +210,6 @@ fn subst_self_segment(seg: &PathSegment, self_ty: &Type) -> TokenStream {
             quote! { #ident (#(#inputs),*) #output }
         }
     }
-}
-
-fn has_once(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("once"))
 }
 
 fn without_once(attrs: &[Attribute]) -> Vec<&Attribute> {

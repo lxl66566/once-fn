@@ -23,10 +23,7 @@ impl BarTrait for Bar {
 }
 
 #[once]
-pub async unsafe fn foo<'a, T>(f: Foo, b: &'a T) -> Foo
-where
-    T: BarTrait,
-{
+pub async unsafe fn foo<'a>(f: Foo, b: &'a Bar) -> Foo {
     Foo(b.get0().0 + b.get1().0 + f.0)
 }
 

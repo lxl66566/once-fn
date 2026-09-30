@@ -1,0 +1,5 @@
+error: unexpected attribute argument, expected `resettable`
+ --> tests/compile_fail/attr_arg.rs:3:8
+  |
+3 | #[once(something)]
+  |        ^^^^^^^^^

@@ -1,0 +1,5 @@
+error: this looks like an impl method; use `#[once_impl]` on the impl block
+ --> tests/compile_fail/free_fn_receiver.rs:4:8
+  |
+4 | fn foo(&self) -> u32 {
+  |        ^^^^^

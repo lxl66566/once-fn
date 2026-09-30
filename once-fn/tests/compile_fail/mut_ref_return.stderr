@@ -1,0 +1,5 @@
+error: mutable references cannot be cached: they would allow mutation of the cached value
+ --> tests/compile_fail/mut_ref_return.rs:4:24
+  |
+4 | fn foo(a: &mut u32) -> &mut u32 {
+  |                        ^^^^^^^^

@@ -102,6 +102,17 @@
 //! The cached value is returned by cloning, so the declared return type must
 //! implement [`Clone`]; for a reference return, the pointee must implement
 //! `Clone`.
+//!
+//! The following forms are rejected at compile time:
+//!
+//! - generic functions and generic impls (lifetime-only generics are fine): the
+//!   cache is one static shared by all monomorphizations, so caching would
+//!   silently mix instantiations; `impl Trait` in argument or return position
+//!   is rejected for the same reason.
+//! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `->
+//!   &dyn Trait`).
+//!
+//! `async fn` is accepted, but a body containing `.await` does not compile yet.
 
 #[doc(inline)]
 pub use once_fn_macros::{once, once_impl};
