@@ -1,0 +1,7 @@
+error: apply `#[once]` to methods inside an `#[once_impl]` block
+ --> tests/compile_fail/once_on_impl.rs:5:1
+  |
+5 | #[once]
+  | ^^^^^^^
+  |
+  = note: this error originates in the attribute macro `once` (in Nightly builds, run with -Z macro-backtrace for more info)

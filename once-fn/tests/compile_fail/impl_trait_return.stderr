@@ -1,0 +1,5 @@
+error: `impl Trait` in return type is not supported: the cache must store a nameable type
+ --> tests/compile_fail/impl_trait_return.rs:4:20
+  |
+4 | fn foo(x: &u32) -> impl std::fmt::Display + use<'_> {
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

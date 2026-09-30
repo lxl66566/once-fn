@@ -1,0 +1,5 @@
+error: impl Trait in argument position is a hidden generic parameter: all monomorphizations would share one cache
+ --> tests/compile_fail/impl_trait_arg.rs:4:8
+  |
+4 | fn foo(x: impl std::fmt::Display) -> String {
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^

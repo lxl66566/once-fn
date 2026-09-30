@@ -1,0 +1,5 @@
+error: `once_impl` does not accept any attribute arguments
+ --> tests/compile_fail/once_impl_args.rs:5:13
+  |
+5 | #[once_impl(foo)]
+  |             ^^^
