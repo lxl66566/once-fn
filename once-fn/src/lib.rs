@@ -53,6 +53,28 @@
 //! assert!(Foo::foo(false)); // cached
 //! ```
 //!
+//! Returning [`std::sync::Arc`] is the pattern for large or non-[`Clone`]
+//! values: the cache stores the `Arc`, so every call only bumps the reference
+//! counter and the pointee type needs no `Clone`.
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use once_fn::once;
+//!
+//! struct Big([u8; 4096]); // does not implement Clone
+//!
+//! #[once]
+//! fn big() -> Arc<Big> {
+//!     Arc::new(Big([0; 4096]))
+//! }
+//!
+//! let a = big();
+//! let b = big();
+//! assert!(Arc::ptr_eq(&a, &b)); // both calls share one allocation
+//! assert_eq!(a.0.len(), 4096);
+//! ```
+//!
 //! # Limitations
 //!
 //! The cached value is returned by cloning, so the declared return type must
