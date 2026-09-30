@@ -42,7 +42,7 @@ impl Foo {
 }
 ```
 
-see [tests](./tests/) for more examples.
+see [tests](./once-fn/tests/) for more examples.
 
 ## Why not
 
@@ -57,7 +57,7 @@ see [tests](./tests/) for more examples.
 
 ## MSRV
 
-1.61.0 (nightly), 1.70.0 (stable)
+1.85.0
 
 ## todo
 

@@ -27,7 +27,8 @@ fn test() {
     assert!(Foo::foo(true));
     assert!(Foo::foo(false));
 
-    // They are actually different functions, so they do not share the same cache
+    // They are actually different functions, so they do not share the same
+    // cache
 
     assert!(<Foo as Bar>::foo(true));
     assert!(<Foo as Bar>::foo(false));

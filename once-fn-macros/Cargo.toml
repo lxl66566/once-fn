@@ -1,0 +1,26 @@
+[package]
+authors                = ["Absolutex <lxl66566@gmail.com>"]
+categories             = ["rust-patterns"]
+description            = "procedural macros for the once-fn crate"
+edition.workspace      = true
+keywords               = ["once", "proc-macro", "cache"]
+license.workspace      = true
+name                   = "once-fn-macros"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck        = "0.5"
+proc-macro2 = "1.0"
+quote       = "1.0"
+syn         = { version = "2.0", features = ["full"] }
+
+[dev-dependencies]
+once-fn = { path = "../once-fn" }
+
+[lints]
+workspace = true

@@ -61,13 +61,21 @@ dependencies = [
 
 [[package]]
 name = "once-fn"
-version = "0.2.1"
+version = "0.3.0"
+dependencies = [
+ "once-fn-macros",
+ "tokio",
+]
+
+[[package]]
+name = "once-fn-macros"
+version = "0.3.0"
 dependencies = [
  "heck",
+ "once-fn",
  "proc-macro2",
  "quote",
  "syn",
- "tokio",
 ]
 
 [[package]]
