@@ -145,8 +145,18 @@ fn expand_method(input: &ImplItemFn, self_ty: &Type) -> TokenStream {
 }
 
 /// Build the rewritten function body: a body-local cache static plus the
-/// `get_or_init` call, wrapped in the reentrancy guard.
+/// `get_or_init` call. Async and sync functions use different cells.
 fn cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
+    if sig.asyncness.is_some() {
+        async_cached_body(sig, block, self_ty)
+    } else {
+        sync_cached_body(sig, block, self_ty)
+    }
+}
+
+/// Build the body for sync functions: a `OnceLock` plus the same-thread
+/// reentrancy guard.
+fn sync_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
     let storage = Storage::of(sig, self_ty);
     let ty = storage.ty();
     let cache_call = match &storage {
@@ -163,6 +173,32 @@ fn cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenS
             // `OnceLock` lives in `std`, not `core` (probed on nightly 1.101)
             static __ONCE: ::std::sync::OnceLock<#ty> = ::std::sync::OnceLock::new();
             #guarded
+        }
+    }
+}
+
+/// Build the body for async functions: the awaited result is cached in an
+/// `once_fn::AsyncOnceCell`, so the body runs to completion once and every
+/// call clones the value (or reborrows the cached pointee). The cell itself
+/// provides cancellation, panic-retry and reentrancy handling, so no extra
+/// guard is generated here.
+fn async_cached_body(sig: &Signature, block: &Block, self_ty: Option<&Type>) -> TokenStream {
+    let storage = Storage::of(sig, self_ty);
+    let ty = storage.ty();
+    let cache_call = match &storage {
+        // the awaited reference to the stored pointee is the return value; the
+        // `&'static` it carries outlives every caller via covariance
+        Storage::Pointee(_) => {
+            quote! { __ONCE.get_or_init(move || async move { ::core::clone::Clone::clone(#block) }).await }
+        }
+        Storage::Owned(_) => {
+            quote! { __ONCE.get_or_init(move || async move { #block }).await.clone() }
+        }
+    };
+    quote! {
+        {
+            static __ONCE: ::once_fn::AsyncOnceCell<#ty> = ::once_fn::AsyncOnceCell::new();
+            #cache_call
         }
     }
 }

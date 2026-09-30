@@ -1,0 +1,5 @@
+error: resettable is not supported for async functions
+ --> tests/compile_fail/resettable_async.rs:4:1
+  |
+4 | async fn foo() -> u32 {
+  | ^^^^^

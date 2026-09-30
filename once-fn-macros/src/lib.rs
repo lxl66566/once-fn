@@ -26,6 +26,45 @@ use syn::{ItemFn, ItemImpl};
 /// assert!(foo(true));
 /// assert!(foo(false)); // body is not run again
 /// ```
+///
+/// `async fn` is supported: the awaited result is cached.
+///
+/// ```
+/// use once_fn::once;
+///
+/// #[once]
+/// async fn bar(b: bool) -> bool {
+///     std::future::ready(()).await;
+///     b
+/// }
+///
+/// fn block_on<F: std::future::Future>(fut: F) -> F::Output {
+///     use std::sync::Arc;
+///     use std::task::{Context, Poll, Wake, Waker};
+///     use std::thread::{self, Thread};
+///
+///     struct ThreadWaker(Thread);
+///
+///     impl Wake for ThreadWaker {
+///         fn wake(self: Arc<Self>) {
+///             self.0.unpark();
+///         }
+///     }
+///
+///     let mut fut = Box::pin(fut);
+///     let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+///     let mut cx = Context::from_waker(&waker);
+///     loop {
+///         match fut.as_mut().poll(&mut cx) {
+///             Poll::Ready(v) => return v,
+///             Poll::Pending => thread::park(),
+///         }
+///     }
+/// }
+///
+/// assert!(block_on(bar(true)));
+/// assert!(block_on(bar(false))); // body is not run again
+/// ```
 #[proc_macro_attribute]
 pub fn once(attr: TokenStream, item: TokenStream) -> TokenStream {
     expand_once(attr, item)

@@ -121,30 +121,36 @@
 //!
 //! # Async
 //!
-//! [`AsyncOnceCell`] is a runtime-agnostic asynchronous once cell backed only
-//! by `std`: the first future to poll it runs its initializer in the caller's
-//! task context, later and concurrent callers share the result, and a dropped
-//! or panicking initializer lets the next call try again. See the type docs
-//! for details.
+//! `async fn` is supported: the body runs to completion once and the awaited
+//! result is cached; every later call returns a clone without re-running the
+//! body. If the first call is cancelled before the body finishes, or the body
+//! panics, the next call runs the body again.
 //!
 //! ```
-//! use once_fn::AsyncOnceCell;
+//! use once_fn::once;
 //!
-//! static CELL: AsyncOnceCell<u32> = AsyncOnceCell::new();
+//! #[once]
+//! async fn answer() -> u32 {
+//!     tokio::task::yield_now().await;
+//!     42
+//! }
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let a = CELL.get_or_init(|| async { 7 }).await;
-//!     let b = CELL.get_or_init(|| async { unreachable!() }).await;
-//!     assert_eq!((a, b), (&7, &7));
+//!     assert_eq!(answer().await, 42);
+//!     assert_eq!(answer().await, 42); // cached
 //! }
 //! ```
+//!
+//! The async cache is [`AsyncOnceCell`], a runtime-agnostic asynchronous once
+//! cell that can also be used directly.
 //!
 //! # Panics
 //!
 //! If a once function is called again while its body is running (directly or
 //! indirectly, on the same thread), the reentrant call panics with a clear
-//! message instead of deadlocking on the cache.
+//! message instead of deadlocking on the cache. An async once fn awaited again
+//! from inside its own initializing body panics the same way.
 //!
 //! # Limitations
 //!
@@ -161,8 +167,6 @@
 //! - `const fn`, `-> &mut T`, and unsized pointees (`-> &str`, `-> &[T]`, `->
 //!   &dyn Trait`).
 //! - `#[once(resettable)]` on an `async fn`.
-//!
-//! `async fn` is accepted, but a body containing `.await` does not compile yet.
 
 mod async_once_cell;
 
